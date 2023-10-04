@@ -1,19 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from flask_cors import CORS
-from flask_bcrypt import Bcrypt
 from datetime import datetime
+from flask_cors import CORS
 
 import json
 
 app = Flask(__name__)
-app.config['JWT_SECRET_KEY'] = 'your_secret_key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:password@localhost/lets-fork'
-jwt = JWTManager(app)
-CORS(app)
 db = SQLAlchemy(app)
-bcrypt = Bcrypt(app)
+CORS(app)
 
 
 # User Model
@@ -22,66 +17,71 @@ class User(db.Model):
     first_name = db.Column(db.String(50), nullable=False)
     last_name = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(60), nullable=False)
-    wishlist = db.Column(db.String(500))    # Store wishlist items as a comma-separated string
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
-        return f'User(id={self.id}, email={self.email}, wishlist={self.wishlist})'
+        return f'User: {self.first_name} {self.last_name} {self.email}'
     
-    @classmethod
-    def from_json(cls, json_data):
-        data = json.loads(json_data)
-        return cls(**data)
+    def __init__(self, first_name, last_name, email):
+        self.first_name = first_name
+        self.last_name = last_name
+        self.email = email
 
+# Format user data into json      
+def format_user(user):
+    return {
+        "id": user.id,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "email": user.email,
+        "created_at": user.created_at
+    }
 
-# API Routes
-@app.route('/register', methods=['POST'])
-def register():
-    json_data = request.get_json()
+# Create a user
+@app.route('/user', methods = ['POST'])
+def create_user():
+    first_name = request.json.get('first_name')
+    last_name = request.json.get('last_name')
+    email = request.json.get('email')
+    user = User(first_name, last_name, email)
+    db.session.add(user)
+    db.session.commit()
+    return format_user(user)
 
-    try:
-        new_user = User.from_json(json.dumps(json_data))
-        hashed_password = bcrypt.generate_password_hash(new_user.password).decode('utf-8')
-        new_user.password = hashed_password
-        db.session.add(new_user)
-        db.session.commit()
-        return jsonify(message='User created successfully'), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify(message=f'Error: {str(e)}'), 500
-    
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    user = User.query.filter_by(email=data['email']).first()
-    if user and bcrypt.check_password_hash(user.password, data['password']):
-        access_token = create_access_token(identity=user.id)
-        return jsonify(access_token=access_token), 200
-    return jsonify(message='Invalid email or password'), 401
+# Get all users and return as a json dictionary
+@app.route('/users', methods = ['GET'])
+def get_users():
+    users = User.query.order_by(User.id.asc()).all()
+    user_list = []
+    for user in users:
+        user_list.append(format_user(user))
+    return {'users': user_list}
 
-@app.route('/profile', methods=['GET', 'PUT'])
-@jwt_required()
-def profile():
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    if request.method == 'GET':
-       return jsonify(user={
-            'id': user.id,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'email': user.email,
-            'wishlist': user.wishlist.split(',') if user.wishlist else []
-       }), 200
-    elif request.method == 'PUT':
-        data = request.get_json()
-        user.first_name = data.get('first_name', user.first_name)
-        user.last_name = data.get('last_name', user.last_name)
-        user.wishlist = ','.join(data.get('wishlist', user.wishlist))
-        db.session.commit()
-        return jsonify(message='User profile updated successfully'), 200
+# Get single user
+@app.route('/users/<id>', methods = ['GET'])
+def get_user():
+    user = User.query.filter_by(id=id).first()
+    formatted_user = format_user(user)
+    return {'user': formatted_user}
+
+# Deleting a single user
+@app.route('/users/<id>', methods=['DELETE'])
+def delete_event(id):
+    user = User.query.filter_by(id=id).first()
+    db.session.delete(user)
+    db.session.commit()
+    return f'User (id: {id}) deleted!'
+
+# Update a user
+@app.route('/users/<id>', methods=['PUT'])
+def update_user(id):
+    user = User.query.filter_by(id=id)
+    first_name = request.json.get('first_name')
+    last_name = request.json.get('last_name')
+    email = request.json.get('email')
+    user.update(dict(first_name = first_name, last_name = last_name, email = email, created_at = datetime.utcnow()))
+    db.session.commit()
+    return {'user': format_user(user.first())}
 
 if __name__ == '__main__':
-    db.create_all   # Create the database tables before running the app
-    app.run(debug=True)
+    app.run()
