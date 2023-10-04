@@ -1,85 +1,184 @@
-// import logo from './logo.svg';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import {format} from 'date-fns'
+
 import './App.css';
 
-class User {
-  constructor(id, first_name, last_name, email, wishlist) {
-    this.id = id;
-    this.first_name = first_name;
-    this.last_name = last_name;
-    this.email = email;
-    this.wishlist = wishlist;
-  }
+const baseUrl = "http://127.0.0.1:5000"
 
-  // String representation of the User object
-  toString() {
-    return JSON.stringify(this);
-  }
-
-  // Static method to initialize User object from a JSON string
-  static fromJSON(jsonString) {
-    const { id, first_name, last_name, email, wishlist } = JSON.parse(jsonString);
-    return new User(id, first_name, last_name, email, wishlist)
-  }
-
-}
+const initialState = {
+  first_name: '',
+  last_name: '',
+  email: ''
+};
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [formData, setFormData] = useState(initialState); 
+  const [editFormData, setEditFormData] = useState(initialState); 
+  const [usersList, setUsersList] = useState([]);
+  const [userId, setUserId] = useState(null);
+
+  const fetchEvents = async () => {
+    const data = await axios.get(`${baseUrl}/users`)
+    const { users } = data.data
+    setUsersList(users);
+  }
+
+  const handleInputChange = (event, field) => {
+    const { name, value } = event.target;
+    if (field === 'edit') {
+      setEditFormData({
+        ...editFormData,
+        [name]: value,
+      });
+    }
+    else {
+    setFormData({
+      ...formData,
+      [name]: value,
+    });
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await axios.delete(`${baseUrl}/users/${id}`);
+      const updatedList = usersList.filter(user => user.id !== id);
+      setUsersList(updatedList);
+    } catch (err) {
+      console.error(err.message);
+    }
+  }
+
+  const toggleEdit = (user) => {
+    setUserId(user.id);
+    setEditFormData({
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email
+    });
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      if (editFormData.email) {
+        const data = await axios.put(`${baseUrl}/users/${userId}`, {
+          first_name: editFormData.first_name,
+          last_name: editFormData.last_name,
+          email: editFormData.email,
+        });
+        const updatedUser = data.data.user;
+        const updatedUsersList = usersList.map(user => {
+          if (user.id === userId) {
+            return user = updatedUser;
+          }
+          return user
+        })
+        setUsersList(updatedUsersList)
+      } else {
+        const data = await axios.post(`${baseUrl}/user`, {
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          email: formData.email,
+        });
+        setUsersList([...usersList, data.data]);
+      }
+      setFormData(initialState);
+      setEditFormData(initialState);
+      setUserId(null);
+    } catch(err) {
+      console.error(err.message);
+    }
+  }
 
   useEffect(() => {
-    // Fetch user profile after component mounts
-    axios.get('http://localhost:5000/profile', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-      }
-    })
-    .then(response => setUser(response.data.user))
-    .catch(error => console.error('Error:', error));
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    setUser(null)
-  };
+    fetchEvents();
+  }, [])
 
   return (
     <div className="App">
-      <header className='App-header'>
-        {user ? (
-          <div>
-            <h1>Welcome, {user.first_name} {user.last_name}!</h1>
-            <h2> Email: {user.email}</h2>
-            <h3>Wishlist: {user.wishlist.join(', ')}</h3>
-            <button onClick={handleLogout}>Logout</button>
-          </div>
-        ) : (
-          <h1>Please log in</h1>
-        )}
-      </header>
+        <section>
+          <form onSubmit={handleSubmit}>
+            <label htmlFor="first name">First name</label>
+            <input
+            onChange={(event) => handleInputChange(event, 'create')}
+              type="text"
+              name="first_name"
+              id="first_name"
+              placeholder="Add your first name here..."
+              value={formData.first_name}
+            />
+            <label htmlFor="last name">Last name</label>
+            <input
+            onChange={(event) => handleInputChange(event, 'create')}
+              type="text"
+              name="last_name"
+              id="last_name"
+              placeholder="Add your last name here..."
+              value={formData.last_name}
+            />
+            <label htmlFor="email">Email</label>
+            <input
+            onChange={(event) => handleInputChange(event, 'create')}
+              type="text"
+              name="email"
+              id="email"
+              placeholder="Add your email here..."
+              value={formData.email}
+            />
+            <button type="submit">Submit</button>
+          </form>
+        </section>
+        <section>
+          <ul>
+            {usersList.map(user => {
+              if (userId === user.id) {
+                return (
+                  <li>
+                  <form onSubmit={handleSubmit} key={user.id}>
+                    <input
+                    onChange={(event) => handleInputChange(event, 'edit')}
+                      type="text"
+                      name="editFirstName"
+                      id="editFirstName"
+                      placeholder="Add your first name here..."
+                      value={editFormData.first_name}
+                    />
+                    <input
+                    onChange={(event) => handleInputChange(event, 'edit')}
+                      type="text"
+                      name="editLastName"
+                      id="editLastName"
+                      placeholder="Add your last name here..."
+                      value={editFormData.last_name}
+                    />
+                    <input
+                    onChange={(event) => handleInputChange(event, 'edit')}
+                      type="text"
+                      name="editEmail"
+                      id="editEmail"
+                      placeholder="Add your email here..."
+                      value={editFormData.email}
+                    />
+                    <button type="submit">Submit</button>
+                  </form>
+                </li>
+                )
+              } else {
+                return (
+                  <li style={{display: "flex"}}key={user.id}>
+                    {user.first_name} {user.last_name} {user.email}
+                    <button onClick={() => toggleEdit(user)}>Edit</button>
+                    <button onClick={()=> handleDelete(user.id)}>Delete</button>
+                  </li>
+                )
+              }
+            })}
+          </ul>
+        </section>
     </div>
   )
-
-
-  // return (
-  //   <div className="App">
-  //     <header className="App-header">
-  //       <img src={logo} className="App-logo" alt="logo" />
-  //       <p>
-  //         Edit <code>src/App.js</code> and save to reload.
-  //       </p>
-  //       <a
-  //         className="App-link"
-  //         href="https://reactjs.org"
-  //         target="_blank"
-  //         rel="noopener noreferrer"
-  //       >
-  //         Learn React
-  //       </a>
-  //     </header>
-  //   </div>
-  // );
 }
 
 export default App;
